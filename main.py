@@ -30,6 +30,7 @@ class Session:
     def __init__(self):
         self.vector_store = None
         self.filename = None
+        self.threads = {} 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -81,53 +82,82 @@ async def chat_page(request: Request, session_id: str):
         }
     )
 
-@app.post("/ask/{session_id}")
-async def ask_question(session_id: str, question: str = Form(...)):
+@app.post("/ask/{session_id}/{thread_id}")
+async def ask_question(session_id: str, thread_id: str, question: str = Form(...)):
     session = sessions.get(session_id)
     if not session or not session.vector_store:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    retriever = session.vector_store.as_retriever(
-        search_kwargs={"k": 3, "score_threshold": 0.7}
-    )
-    
+    thread = session.threads.get(thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    retriever = session.vector_store.as_retriever(search_kwargs={"k": 3, "score_threshold": 0.7})
+
     try:
         docs = retriever.get_relevant_documents(question)
-    except Exception as e:
+    except Exception:
         return {"answer": "Error searching document"}
 
     if not docs or all(len(doc.page_content.strip()) < 30 for doc in docs):
-        return {"answer": "This information is not available in the uploaded PDF."}
+        answer = "This information is not available in the uploaded PDF."
+        session.threads[thread_id].append((question, answer))
+        return {"answer": answer}
 
     prompt_template = """Use only the following context to answer the question. 
     If the answer isn't in the context, say "This is not mentioned in the document."
-    
+
     Context: {context}
-    
+
     Question: {question}
-    
+
     Answer:"""
-    
-    PROMPT = PromptTemplate(
-        template=prompt_template,
-        input_variables=["context", "question"]
-    )
-    
+
+    PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-    chain_type_kwargs = {"prompt": PROMPT}
-    
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
         retriever=retriever,
-        chain_type_kwargs=chain_type_kwargs,
+        chain_type_kwargs={"prompt": PROMPT},
         return_source_documents=True
     )
-    
-    result = qa({"query": question})
 
+    result = qa({"query": question})
     answer = result["result"]
     if "not mentioned" in answer.lower() or "not available" in answer.lower():
         answer = "This information is not available in the uploaded PDF."
-    
+
+    session.threads[thread_id].append((question, answer))
     return {"answer": answer}
+
+@app.post("/chat/{session_id}/new-thread")
+async def new_thread(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    thread_id = str(uuid.uuid4())
+    session.threads[thread_id] = []
+
+    return {"thread_id": thread_id}
+
+@app.get("/chat/{session_id}/{thread_id}/history")
+async def get_thread_history(session_id: str, thread_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    thread = session.threads.get(thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    return {"messages": [{"question": q, "answer": a} for q, a in thread]}
+
+@app.get("/chat/{session_id}/threads")
+async def list_threads(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return {"thread_ids": list(session.threads.keys())}
