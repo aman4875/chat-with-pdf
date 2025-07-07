@@ -11,19 +11,19 @@ This project allows users to upload a PDF and chat with it using OpenAI's GPT mo
 - ⚡ Vector similarity search using FAISS
 - 💬 Ask questions and get accurate answers from the document
 - 🧠 Built with FastAPI + LangChain
+- 🐳 Dockerized for easy deployment
 
 ---
 
-## 📁 Project Structure
-│
-├── main.py # FastAPI app
+chat-with-pdf/
+├── main.py # FastAPI app entry point
 ├── templates/
-│ ├── index.html # Upload UI
+│ ├── index.html # PDF upload UI
 │ └── chat.html # Chat interface
 ├── static/ # Static assets
 ├── requirements.txt # Python dependencies
 ├── Dockerfile # Docker configuration
-├── .env # OpenAI API key
+├── .env # OpenAI API key (not committed)
 └── README.md # You're here!
 
 
@@ -61,3 +61,10 @@ pip install -r requirements.txt
 ▶️ Run the App
 
 uvicorn main:app --reload
+
+🐳 Docker Deployment
+1. Build Docker Image
+docker build -t pdf-chat-app .
+
+2. Run the Container
+docker run -p 8000:8000 pdf-chat-app

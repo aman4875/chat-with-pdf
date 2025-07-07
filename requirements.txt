@@ -5,3 +5,8 @@ openai
 PyPDF2
 python-dotenv
 faiss-cpu
+langchain-community
+langchain-openai
+jinja2
+python-multipart
+pypdf
