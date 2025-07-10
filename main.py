@@ -14,6 +14,7 @@ from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 import uuid
 from dotenv import load_dotenv
+import re
 
 app = FastAPI()
 
@@ -92,11 +93,18 @@ async def ask_question(session_id: str, thread_id: str, question: str = Form(...
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    retriever = session.vector_store.as_retriever(search_kwargs={"k": 3, "score_threshold": 0.7})
+    retriever = session.vector_store.as_retriever(
+        search_kwargs={
+            "k": 8,
+            "score_threshold": 0.5,
+            "fetch_k": 30
+        }
+    )
 
     try:
         docs = retriever.get_relevant_documents(question)
-    except Exception:
+    except Exception as e:
+        print(f"Retrieval error: {str(e)}")
         return {"answer": "Error searching document"}
 
     if not docs or all(len(doc.page_content.strip()) < 30 for doc in docs):
@@ -104,17 +112,32 @@ async def ask_question(session_id: str, thread_id: str, question: str = Form(...
         session.threads[thread_id].append((question, answer))
         return {"answer": answer}
 
-    prompt_template = """Use only the following context to answer the question. 
-    If the answer isn't in the context, say "This is not mentioned in the document."
+    prompt_template = """
+    You are a helpful assistant summarizing and explaining information from uploaded documents.
+    Use only the given context to answer the question in a helpful, clear, and concise way.
 
-    Context: {context}
+    Answer structure:
+    1. Give a direct answer
+    2. Highlight key points as a list if appropriate
+    3. Explain using plain English
 
-    Question: {question}
+    Context:
+    {context}
 
-    Answer:"""
+    Question:
+    {question}
+
+    Answer:
+    """
 
     PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
-    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+
+    llm = ChatOpenAI(
+        model="gpt-4-turbo",
+        temperature=0.5,
+        max_tokens=800
+    )
+
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
@@ -127,7 +150,12 @@ async def ask_question(session_id: str, thread_id: str, question: str = Form(...
     answer = result["result"]
     if "not mentioned" in answer.lower() or "not available" in answer.lower():
         answer = "This information is not available in the uploaded PDF."
+    elif len(answer.split()) < 30:
+        answer = qa({
+            "query": f"Expand this answer with more details from the context: {question}"
+        })["result"]
 
+    answer = re.sub(r"\*\*", "", answer)
     session.threads[thread_id].append((question, answer))
     return {"answer": answer}
 
