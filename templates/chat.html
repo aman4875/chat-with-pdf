@@ -85,6 +85,11 @@
         .message-content {
             padding: 10px 15px;
         }
+        .message-content em {
+            display: block;
+            margin-top: 4px;
+            color: #555;
+        }
     </style>
 </head>
 <body>
@@ -165,20 +170,41 @@
                 });
 
                 const data = await response.json();
-                addMessage(data.answer, 'bot');
+                addMessage(data.answer, 'bot', data.sources || []);
 
             } catch (error) {
                 addMessage(`Error: ${error.message}`, 'bot');
             }
         });
 
-        function addMessage(content, sender) {
+        function addMessage(content, sender, sources = []) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender}-message`;
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
             contentDiv.innerHTML = `<strong>${sender === 'user' ? 'You' : 'PDF Assistant'}:</strong> ${content}`;
+
+        if (sender === 'bot' && sources.length > 0) {
+            const sourceContainer = document.createElement('div');
+            sourceContainer.className = 'mt-2';
+
+            const sourceHeader = document.createElement('small');
+            sourceHeader.innerHTML = `<strong>Sources:</strong>`;
+            sourceContainer.appendChild(sourceHeader);
+
+            sources.forEach(src => {
+                const sourceItem = document.createElement('div');
+                sourceItem.className = 'text-muted small mb-1';
+                sourceItem.innerHTML = `
+                    📄 <strong>${src.file}</strong>, Page ${src.page}<br>
+                    <em>${src.text}</em>
+                `;
+                sourceContainer.appendChild(sourceItem);
+            });
+
+            contentDiv.appendChild(sourceContainer);
+        }
 
             messageDiv.appendChild(contentDiv);
             chatBody.appendChild(messageDiv);
@@ -207,7 +233,7 @@
                         if (threadId === currentThreadId) li.classList.add('active');
                         li.onclick = () => {
                             currentThreadId = threadId;
-                            loadThreads(); // to update active highlight
+                            loadThreads(); // update UI
                             loadHistory();
                         };
                         threadList.appendChild(li);
@@ -227,12 +253,12 @@
                     }
                     data.messages.forEach(msg => {
                         addMessage(msg.question, 'user');
-                        addMessage(msg.answer, 'bot');
+                        addMessage(msg.answer, 'bot', msg.sources || []);
                     });
                 });
         }
 
-        // Auto-load threads on page load
+        // Auto-load on page load
         loadThreads();
     </script>
 </body>

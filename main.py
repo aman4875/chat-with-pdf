@@ -105,12 +105,12 @@ async def ask_question(session_id: str, thread_id: str, question: str = Form(...
         docs = retriever.get_relevant_documents(question)
     except Exception as e:
         print(f"Retrieval error: {str(e)}")
-        return {"answer": "Error searching document"}
+        return {"answer": "Error searching document", "sources": []}
 
     if not docs or all(len(doc.page_content.strip()) < 30 for doc in docs):
         answer = "This information is not available in the uploaded PDF."
         session.threads[thread_id].append((question, answer))
-        return {"answer": answer}
+        return {"answer": answer, "sources": []}
 
     prompt_template = """
     You are a helpful assistant summarizing and explaining information from uploaded documents.
@@ -148,6 +148,8 @@ async def ask_question(session_id: str, thread_id: str, question: str = Form(...
 
     result = qa({"query": question})
     answer = result["result"]
+    source_docs = result.get("source_documents", [])
+
     if "not mentioned" in answer.lower() or "not available" in answer.lower():
         answer = "This information is not available in the uploaded PDF."
     elif len(answer.split()) < 30:
@@ -156,8 +158,23 @@ async def ask_question(session_id: str, thread_id: str, question: str = Form(...
         })["result"]
 
     answer = re.sub(r"\*\*", "", answer)
+    sources = []
+    for doc in source_docs:
+        content = doc.page_content.strip()
+        if not content:
+            continue
+        sources.append({
+            "page": doc.metadata.get("page", "N/A"),
+            "file": doc.metadata.get("source", "Uploaded File"),
+            "text": content[:300] + "..." if len(content) > 300 else content
+        })
+
     session.threads[thread_id].append((question, answer))
-    return {"answer": answer}
+
+    return {
+        "answer": answer,
+        "sources": sources
+    }
 
 @app.post("/chat/{session_id}/new-thread")
 async def new_thread(session_id: str):
